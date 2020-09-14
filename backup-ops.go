@@ -158,7 +158,7 @@ func performDuplicacyBackup(logger *log.Logger, testArgs []string) error {
 	}
 
 	// Perform backup operation
-	for i, backupInfo := range configFile.backupInfo {
+	for i, backupInfo := range configFile.BackupInfo {
 		backupStartTime := time.Now().UTC()
 		logger.Println("######################################################################")
 
@@ -170,47 +170,36 @@ func performDuplicacyBackup(logger *log.Logger, testArgs []string) error {
 		}
 
 		// Build remainder of command arguments
-		cmdArgs = append(cmdArgs, "backup", "-storage", backupInfo["name"], "-stats")
+		cmdArgs = append(cmdArgs, "backup", "-storage", backupInfo.Name, "-stats")
 
 		// Handle optional parameters that may be specified
-		threadCount := "1"
-		if _, ok := backupInfo["threads"]; ok {
-			if backupInfo["threads"] != "" {
-				threadCount = backupInfo["threads"]
-				cmdArgs = append(cmdArgs, "-threads", threadCount)
-			}
-		}
+		fmt.Printf("BACKUP: %v\n", backupInfo)
+		threadCount := backupInfo.Threads
+		cmdArgs = append(cmdArgs, "-threads", threadCount)
 
 		vssFlags := ""
-		if _, ok := backupInfo["vss"]; ok {
-			if backupInfo["vss"] == "true" {
-				cmdArgs = append(cmdArgs, "-vss")
+		if backupInfo.Vss {
+			cmdArgs = append(cmdArgs, "-vss")
+			vssFlags += " -vss"
 
-				vssFlags = " -vss"
-				if _, ok := backupInfo["vssTimeout"]; ok {
-					if backupInfo["vssTimeout"] != "" {
-						cmdArgs = append(cmdArgs, "-vss-timeout", backupInfo["vssTimeout"])
-						vssFlags = fmt.Sprintf("%s -vss-timeout %s", vssFlags, backupInfo["vssTimeout"])
-					}
-				}
+			if backupInfo.VssTimeout != "" {
+				cmdArgs = append(cmdArgs, "-vss-timeout", backupInfo.VssTimeout)
+				vssFlags += fmt.Sprintf(" -vss-timeout %v", backupInfo.VssTimeout)
 			}
 		}
 
-		quoteFlags := ""
-		if _, ok := backupInfo["quote"]; ok {
-			if backupInfo["quote"] != "" {
-				quoteFlags = " " + backupInfo["quote"]
-				cmdArgs = append(cmdArgs, strings.Split(backupInfo["quote"], " ")...)
-			}
+		quoteFlags := backupInfo.Quote
+		if backupInfo.Quote != "" {
+			cmdArgs = append(cmdArgs, " " + backupInfo.Quote)
 		}
 
-		logMessage(logger, fmt.Sprintf("Backing up to storage %s%s with %s threads%s", backupInfo["name"], vssFlags, threadCount, quoteFlags))
+		logMessage(logger, fmt.Sprintf("Backing up to storage %s%s with %s threads%s", backupInfo.Name, vssFlags, threadCount, quoteFlags))
 
 		// Execute duplicacy
 		if debugFlag {
 			logMessage(logger, fmt.Sprint("Executing: ", duplicacyPath, cmdArgs))
 		}
-		err := executor(duplicacyPath, cmdArgs, configFile.repoDir, backupLogger)
+		err := executor(duplicacyPath, cmdArgs, configFile.RepoDir, backupLogger)
 		if err != nil {
 			logError(logger, fmt.Sprint("Error executing command: ", err))
 			return err
@@ -224,7 +213,7 @@ func performDuplicacyBackup(logger *log.Logger, testArgs []string) error {
 		logMessage(logger, fmt.Sprint("  Duration: ", backupDuration))
 
 		// Save data from backup for HTML table in E-Mail
-		backupEntry.storage = backupInfo["name"]
+		backupEntry.storage = backupInfo.Name
 		backupEntry.duration = backupDuration
 		backupTable = append(backupTable, backupEntry)
 	}
@@ -257,7 +246,7 @@ func performDuplicacyCopy(logger *log.Logger, testArgs []string) error {
 		}
 	}
 
-	for i, copyInfo := range configFile.copyInfo {
+	for i, copyInfo := range configFile.CopyInfo {
 		copyStartTime := time.Now().UTC()
 		logger.Println("######################################################################")
 
@@ -269,31 +258,24 @@ func performDuplicacyCopy(logger *log.Logger, testArgs []string) error {
 		}
 
 		// Build remainder of command arguments
-		cmdArgs = append(cmdArgs, "copy", "-from", copyInfo["from"], "-to", copyInfo["to"])
+		cmdArgs = append(cmdArgs, "copy", "-from", copyInfo.From, "-to", copyInfo.To)
 
 		// Handle optional parameters that may be specified
-		threadCount := "1"
-		if _, ok := copyInfo["threads"]; ok {
-			if copyInfo["threads"] != "" {
-				threadCount = copyInfo["threads"]
-				cmdArgs = append(cmdArgs, "-threads", threadCount)
-			}
+		threadCount := copyInfo.Threads
+		cmdArgs = append(cmdArgs, "-threads", threadCount)
+
+		quoteFlags := copyInfo.Quote
+		if copyInfo.Quote != "" {
+			cmdArgs = append(cmdArgs, " " + copyInfo.Quote)
 		}
 
-		quoteFlags := ""
-		if _, ok := copyInfo["quote"]; ok {
-			if copyInfo["quote"] != "" {
-				quoteFlags = " " + copyInfo["quote"]
-				cmdArgs = append(cmdArgs, strings.Split(copyInfo["quote"], " ")...)
-			}
-		}
-
-		logMessage(logger, fmt.Sprintf("Copying from storage %s to storage %s with %s threads%s", copyInfo["from"], copyInfo["to"], threadCount, quoteFlags))
+		logMessage(logger, fmt.Sprintf("Copying from storage %s to storage %s with %s threads%s",
+			copyInfo.From, copyInfo.To, threadCount, quoteFlags))
 
 		if debugFlag {
 			logMessage(logger, fmt.Sprint("Executing: ", duplicacyPath, cmdArgs))
 		}
-		err := executor(duplicacyPath, cmdArgs, configFile.repoDir, copyLogger)
+		err := executor(duplicacyPath, cmdArgs, configFile.RepoDir, copyLogger)
 		if err != nil {
 			logError(logger, fmt.Sprint("Error executing command: ", err))
 			return err
@@ -307,8 +289,8 @@ func performDuplicacyCopy(logger *log.Logger, testArgs []string) error {
 		logMessage(logger, fmt.Sprint("  Duration: ", copyDuration))
 
 		// Save data from backup for HTML table in E-Mail
-		copyEntry.storageFrom = copyInfo["from"]
-		copyEntry.storageTo = copyInfo["to"]
+		copyEntry.storageFrom = copyInfo.From
+		copyEntry.storageTo = copyInfo.To
 		copyEntry.duration = copyDuration
 		copyTable = append(copyTable, copyEntry)
 	}
@@ -321,7 +303,7 @@ func performDuplicacyPrune(logger *log.Logger, testArgs []string) error {
 	anon := func(s string) { logger.Println(s) }
 
 	// Perform prune operations
-	for i, pruneInfo := range configFile.pruneInfo {
+	for i, pruneInfo := range configFile.PruneInfo {
 		logger.Println("######################################################################")
 
 		// Minor support for unit tests - distasteful but only reasonable option
@@ -332,44 +314,32 @@ func performDuplicacyPrune(logger *log.Logger, testArgs []string) error {
 		}
 
 		// Build remainder of command arguments
-		cmdArgs = append(testArgs, "prune", "-storage", pruneInfo["storage"])
-		cmdArgs = append(cmdArgs, strings.Split(pruneInfo["keep"], " ")...)
+		cmdArgs = append(testArgs, "prune", "-storage", pruneInfo.Storage)
+		cmdArgs = append(cmdArgs, strings.Split(pruneInfo.Keep, " ")...)
 
 		// Handle optional parameters that may be specified
-		threadCount := "1"
-		if _, ok := pruneInfo["threads"]; ok {
-			if pruneInfo["threads"] != "" {
-				threadCount = pruneInfo["threads"]
-				cmdArgs = append(cmdArgs, "-threads", threadCount)
-			}
-		}
+		threadCount := pruneInfo.Threads
+		cmdArgs = append(cmdArgs, "-threads", threadCount)
 
 		allFlag := ""
-		if _, ok := pruneInfo["all"]; ok {
-			if pruneInfo["all"] != "false" {
-				allFlag = " -all"
-				cmdArgs = append(cmdArgs, "-all")
-			}
-		} else {
+		if pruneInfo.All {
 			allFlag = " -all"
 			cmdArgs = append(cmdArgs, "-all")
 		}
 
-		quoteFlags := ""
-		if _, ok := pruneInfo["quote"]; ok {
-			if pruneInfo["quote"] != "" {
-				quoteFlags = " " + pruneInfo["quote"]
-				cmdArgs = append(cmdArgs, strings.Split(pruneInfo["quote"], " ")...)
-			}
+		quoteFlags := pruneInfo.Quote
+		if pruneInfo.Quote != "" {
+			cmdArgs = append(cmdArgs, " " + pruneInfo.Quote)
 		}
 
-		logMessage(logger, fmt.Sprintf("Pruning storage %s using %s thread(s)%s%s", pruneInfo["storage"], threadCount, allFlag, quoteFlags))
+		logMessage(logger, fmt.Sprintf("Pruning storage %s using %s thread(s)%s%s",
+			pruneInfo.Storage, threadCount, allFlag, quoteFlags))
 
 		// Execute duplicacy
 		if debugFlag {
 			logMessage(logger, fmt.Sprint("Executing: ", duplicacyPath, cmdArgs))
 		}
-		err := executor(duplicacyPath, cmdArgs, configFile.repoDir, anon)
+		err := executor(duplicacyPath, cmdArgs, configFile.RepoDir, anon)
 		if err != nil {
 			logError(logger, fmt.Sprint("Error executing command: ", err))
 			return err
@@ -384,7 +354,7 @@ func performDuplicacyCheck(logger *log.Logger, testArgs []string) error {
 	anon := func(s string) { logger.Println(s) }
 
 	// Perform check operations
-	for i, checkInfo := range configFile.checkInfo {
+	for i, checkInfo := range configFile.CheckInfo {
 		logger.Println("######################################################################")
 
 		// Minor support for unit tests - distasteful but only reasonable option
@@ -395,32 +365,27 @@ func performDuplicacyCheck(logger *log.Logger, testArgs []string) error {
 		}
 
 		// Build remainder of command arguments
-		cmdArgs = append(cmdArgs, "check", "-storage", checkInfo["storage"])
+		cmdArgs = append(cmdArgs, "check", "-storage", checkInfo.Storage)
 
 		// Handle optional parameters that may be specified
 		allText := ""
-		if _, ok := checkInfo["all"]; ok {
-			if checkInfo["all"] == "true" {
-				allText = " with -all"
-				cmdArgs = append(cmdArgs, "-all")
-			}
+		if checkInfo.All {
+			allText = " with -all"
+			cmdArgs = append(cmdArgs, "-all")
 		}
 
-		quoteFlags := ""
-		if _, ok := checkInfo["quote"]; ok {
-			if checkInfo["quote"] != "" {
-				quoteFlags = " " + checkInfo["quote"]
-				cmdArgs = append(cmdArgs, strings.Split(checkInfo["quote"], " ")...)
-			}
+		quoteFlags := checkInfo.Quote
+		if checkInfo.Quote != "" {
+			cmdArgs = append(cmdArgs, " " + checkInfo.Quote)
 		}
 
-		logMessage(logger, fmt.Sprintf("Checking storage %s%s%s", checkInfo["storage"], allText, quoteFlags))
+		logMessage(logger, fmt.Sprintf("Checking storage %s%s%s", checkInfo.Storage, allText, quoteFlags))
 
 		// Execute duplicacy
 		if debugFlag {
 			logMessage(logger, fmt.Sprint("Executing: ", duplicacyPath, cmdArgs))
 		}
-		err := executor(duplicacyPath, cmdArgs, configFile.repoDir, anon)
+		err := executor(duplicacyPath, cmdArgs, configFile.RepoDir, anon)
 		if err != nil {
 			logError(logger, fmt.Sprint("Error executing command: ", err))
 			return err
